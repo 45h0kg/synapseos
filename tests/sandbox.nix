@@ -5,8 +5,9 @@
   nodes.machine = { imports = modules; virtualisation.memorySize = 1536; };
   testScript = ''
     machine.wait_for_unit("multi-user.target")
-    links = machine.succeed("synapse-sandbox -- ${hostPkgs.iproute2}/bin/ip -o link")
-    assert len(links.strip().splitlines()) == 1 and ": lo:" in links, links
+    devices = machine.succeed("synapse-sandbox -- ${hostPkgs.coreutils}/bin/cat /proc/net/dev")
+    names = [line.split(":")[0].strip() for line in devices.splitlines() if ":" in line]
+    assert names == ["lo"], devices
     uid = machine.succeed("synapse-sandbox -- ${hostPkgs.coreutils}/bin/id -u").strip()
     assert uid != "0", uid
     machine.fail("synapse-sandbox -- ${hostPkgs.coreutils}/bin/touch /etc/escaped")

@@ -14,6 +14,10 @@ let
       format = "wheel";
       src = fetchurl { inherit url hash; };
       dontCheckRuntimeDeps = true;
+      # Dependencies propagate ninja's setup hook, and a wheel has nothing to build.
+      dontUseNinjaBuild = true;
+      dontUseNinjaInstall = true;
+      dontUseNinjaCheck = true;
     };
 
   sdist =
