@@ -114,6 +114,7 @@ SynapseOS is a research project and has no independent security audit. Read [Lim
 - [Limitations](#limitations)
 - [Troubleshooting](#troubleshooting)
 - [Roadmap](#roadmap)
+- [License](#license)
 
 ## What is in the image
 
@@ -740,3 +741,7 @@ nix build .#garak                                             # one package
 ### Phase 3: Interface & Verification
 * [x] Construct a dedicated Python TUI dashboard that launches at boot for rapid network analysis.
 * [x] Implement automated compliance auditing using an open-source security benchmark checker.
+
+## License
+
+SynapseOS is released under the [MIT License](LICENSE). The ISO also contains third-party software under its own licenses.
