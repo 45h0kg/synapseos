@@ -2,7 +2,12 @@
 { hostPkgs, ... }:
 {
   name = "synapse-sandbox";
-  nodes.machine = { imports = modules; virtualisation.memorySize = 1536; };
+  nodes.machine = {
+    imports = modules;
+    virtualisation.memorySize = 1536;
+    # The test driver panics the VM on any OOM; the limit below relies on the kill.
+    boot.kernel.sysctl."vm.panic_on_oom" = 0;
+  };
   testScript = ''
     machine.wait_for_unit("multi-user.target")
     devices = machine.succeed("synapse-sandbox -- ${hostPkgs.coreutils}/bin/cat /proc/net/dev")
