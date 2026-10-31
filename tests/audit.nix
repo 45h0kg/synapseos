@@ -4,7 +4,7 @@
   name = "synapse-audit";
   nodes.machine = {
     imports = modules;
-    environment.systemPackages = [ pkgs.lynis ];
+    environment.systemPackages = [ hostPkgs.lynis ];
     virtualisation.memorySize = 1536;
   };
   testScript = ''
