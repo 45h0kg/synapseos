@@ -1,0 +1,75 @@
+name: "Compile SynapseOS Hardened ISO"
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  release:
+    types: [ created ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v7.0.1
+
+    - name: Enable KVM
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    - name: Free Disk Space
+      run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache
+
+    - name: Install Nix
+      uses: cachix/install-nix-action@v31.11.3
+      with:
+        extra_nix_config: |
+          system-features = kvm nixos-test benchmark big-parallel
+
+    - name: Lock Inputs
+      run: nix flake lock
+
+    - name: Upload Lock File
+      uses: actions/upload-artifact@v7.0.2
+      with:
+        name: flake-lock
+        path: flake.lock
+
+    - name: Run VM Tests
+      run: nix flake check --print-build-logs --keep-going
+
+  build:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v7.0.1
+
+    - name: Free Disk Space
+      run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache
+
+    - name: Install Nix
+      uses: cachix/install-nix-action@v31.11.3
+
+    - name: Compile Hardened Bootable ISO
+      run: nix build .#nixosConfigurations.synapseOS.config.system.build.isoImage --print-build-logs
+
+    - name: Record ISO Checksum
+      run: sha256sum result/iso/*.iso | tee synapseos.sha256
+
+    - name: Upload ISO Artifact
+      uses: actions/upload-artifact@v7.0.2
+      with:
+        name: synapseOS-live-hardened
+        path: |
+          result/iso/*.iso
+          synapseos.sha256
+        compression-level: 0
