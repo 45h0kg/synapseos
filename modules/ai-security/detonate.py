@@ -352,7 +352,8 @@ def detonate(name, model, runtime, rundir, world, opts):
         rules = f"""table inet world {{
           chain output {{ type nat hook output priority -100;
             meta l4proto tcp redirect to :{SINK_PORT}
-            meta l4proto udp redirect to :{SINK_PORT} }}
+            meta l4proto udp redirect to :{SINK_PORT}
+          }}
         }}"""
         ns = ["ip", "netns", "exec", netns]
         sh(*ns, "ip", "link", "set", "lo", "up")
