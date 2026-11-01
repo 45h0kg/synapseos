@@ -45,10 +45,10 @@ in
   };
   testScript = ''
     machine.wait_for_unit("multi-user.target")
-    status, _ = machine.execute(
+    machine.succeed(
         "PYTHONUNBUFFERED=1 ${hostPkgs.python3}/bin/python3 ${./bench-run.py} ${corpus} ${models} ${wheel} "
         "2>&1 | tee /dev/ttyS0 > /tmp/bench.log",
-        check_output=False, timeout=12600)
+        timeout=12600)
     machine.succeed("grep -q BENCH-DONE /tmp/bench.log")
   '';
 }

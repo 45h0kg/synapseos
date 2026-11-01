@@ -347,7 +347,7 @@ synapse-detonate verify /var/lib/synapse-chamber/runs/<id>/receipt.json
 | `no-divergence` | 0 | The file did nothing kernel-visible that its twin did not, on this path |
 | `divergent` | 10 | It did, and the findings list what |
 | `exfiltration` | 20 | A honeytoken was recovered from outbound traffic |
-| `inconclusive` | 30 | Events were lost, or the twin itself failed, with no divergence seen |
+| `inconclusive` | 30 | Events were lost, the suspect hit the time limit, or the twin itself failed, with no divergence seen |
 
 **The receipt.** Each scan writes a signed `receipt.json` in `/var/lib/synapse-chamber/runs/<id>/`. It holds the model hash, twin hash, findings, hash-chained trace heads and the Nix store path of the running system. Because that path identifies the whole lab, a third party can build the same system and detonate the same file. The behaviour digest covers the findings and was stable across repeated runs in CI.
 

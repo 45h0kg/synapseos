@@ -28,6 +28,7 @@ SINK_PORT = 15353
 INERT_TEMPLATE = "{% for m in messages %}{{ m.content }}{% endfor %}"
 EXIT = {"no-divergence": 0, "divergent": 10, "exfiltration": 20, "inconclusive": 30, "malformed": 40}
 SEVERITY = {"info": 0, "medium": 1, "high": 2, "critical": 3}
+TIMED_OUT = 124
 SENSITIVE = re.compile(r"^(/proc/(self|N)/(environ|mem|maps)|/etc/(passwd|shadow|ssh/)|/root/|/run/secrets)")
 
 # GGUF
@@ -395,6 +396,7 @@ def detonate(name, model, runtime, rundir, world, opts):
         cmd += [f"--setenv={k}={v}" for k, v in env.items()]
         cmd += [f"--property={p}" for p in props]
         cmd += ["--", "/bin/sh", "-c", 'read -r _ < /gate; exec "$@"', "chamber", *loader]
+        started = time.time()
         target = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         def cgroup():
@@ -443,6 +445,10 @@ def detonate(name, model, runtime, rundir, world, opts):
             # A fork bomb can outlast the unit's own timeout, so it is killed outright.
             subprocess.run(["systemctl", "kill", "--signal=KILL", f"{unit}.service"], capture_output=True)
             status = 137
+        else:
+            # systemd reports RuntimeMaxSec as an ordinary failure, so a timeout is told apart by the clock.
+            if status and time.time() - started >= opts.timeout:
+                status = TIMED_OUT
         time.sleep(1)
         tracer.send_signal(signal.SIGINT)
         try:
@@ -522,7 +528,9 @@ def behaviours(lines, sink_events, home_files):
 
 def judge(twin, suspect, twin_status, suspect_status, lost, exfil):
     divergence = suspect - twin
-    if suspect_status != 0 and twin_status == 0:
+    if suspect_status == TIMED_OUT:
+        divergence.add(("info", "timeout", "suspect hit the time limit"))
+    elif suspect_status != 0 and twin_status == 0:
         divergence.add(("high", "runtime-failure", f"status {suspect_status}"))
     for name in exfil:
         divergence.add(("critical", "exfiltration", name))
@@ -532,7 +540,7 @@ def judge(twin, suspect, twin_status, suspect_status, lost, exfil):
         verdict = "exfiltration"
     elif worst >= 1:
         verdict = "divergent"
-    elif lost or twin_status != 0:
+    elif lost or twin_status != 0 or suspect_status == TIMED_OUT:
         verdict = "inconclusive"
     else:
         verdict = "no-divergence"
