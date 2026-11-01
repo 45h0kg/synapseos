@@ -320,7 +320,7 @@ PROBES = [
 def bpf_program(cgroup):
     guard = f'cgroup == cgroupid("{cgroup}")'
     body = "\n".join(f"tracepoint:{probe} /{guard}/ {{ {action} }}" for probe, action in PROBES)
-    return 'config = { max_strlen = 200 }\nBEGIN { printf("READY\\n"); }\n' + body + "\n"
+    return 'BEGIN { printf("READY\\n"); }\n' + body + "\n"
 
 
 def wait_for(check, timeout, what):
