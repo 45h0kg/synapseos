@@ -14,7 +14,7 @@ let
         l2)      filter='lldp || cdp || stp || vlan || lacp' ;;
         routing) filter='ospf || eigrp || bgp || isis' ;;
         ha)      filter='hsrp || vrrp || glbp' ;;
-        ai)      filter='tcp.port in {8000 8080 11434}' ;;
+        ai)      filter='tcp.port in {8000, 8080, 11434}' ;;
         *)       echo "unknown profile: $2" >&2; exit 2 ;;
       esac
       exec tshark -i "$1" -Y "$filter"
