@@ -49,6 +49,6 @@ in
         "PYTHONUNBUFFERED=1 ${hostPkgs.python3}/bin/python3 ${./bench-run.py} ${corpus} ${models} ${wheel} "
         "2>&1 | tee /dev/ttyS0 > /tmp/bench.log",
         check_output=False, timeout=12600)
-    print(machine.succeed("cat /tmp/bench.log"))
+    machine.succeed("grep -q BENCH-DONE /tmp/bench.log")
   '';
 }
