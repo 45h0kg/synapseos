@@ -8,11 +8,13 @@ permissions:
   contents: read
 
 jobs:
-  benchmark: &job
+  run:
     runs-on: ubuntu-latest
     timeout-minutes: 300
-    env:
-      TARGET: benchmark
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [ benchmark, iso-boot ]
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v7.0.1
@@ -33,9 +35,4 @@ jobs:
           system-features = kvm nixos-test benchmark big-parallel
 
     - name: Run
-      run: nix build .#$TARGET --no-update-lock-file --print-build-logs
-
-  iso-boot:
-    <<: *job
-    env:
-      TARGET: iso-boot
+      run: nix build .#${{ matrix.target }} --no-update-lock-file --print-build-logs
