@@ -16,6 +16,7 @@
         ./modules/networking/triage.nix
         ./modules/networking/wireguard-mesh.nix
         ./modules/ai-security/airgap.nix
+        ./modules/ai-security/detonation-chamber.nix
         ./modules/ai-security/garak-scanner.nix
         ./modules/ai-security/sandbox-runtime.nix
         ./modules/desktop/tui-dashboard.nix
@@ -30,6 +31,7 @@
       nixosConfigurations.synapseOS = nixpkgs.lib.nixosSystem {
         inherit system;
         modules = modules ++ [
+          { system.configurationRevision = self.rev or self.dirtyRev or null; }
           "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
           ./modules/iso.nix
         ];
@@ -47,6 +49,7 @@
         sandbox = vmTest ./tests/sandbox.nix;
         ebpf = vmTest ./tests/ebpf.nix;
         audit = vmTest ./tests/audit.nix;
+        chamber = vmTest ./tests/chamber.nix;
         ai-tools = pkgs.runCommand "synapse-ai-tools-smoke" { nativeBuildInputs = [ tools.garak tools.inspect_ai ]; } ''
           export HOME=$TMPDIR
           garak --version

@@ -10,5 +10,6 @@
   services.getty.autologinUser = lib.mkForce "synapse";
 
   synapseos.aiTools.enable = true;
+  synapseos.chamber.torch = true;
   synapseos.dashboard.enable = true;
 }
