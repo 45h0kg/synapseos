@@ -99,6 +99,7 @@ SynapseOS is a research project and has no independent security audit. Read [Lim
 - [First boot](#first-boot)
 - [The sandbox](#the-sandbox)
 - [Local models](#local-models)
+- [The detonation chamber](#the-detonation-chamber)
 - [Scanning with garak](#scanning-with-garak)
 - [Evaluating with Inspect AI](#evaluating-with-inspect-ai)
 - [Air-gap mode](#air-gap-mode)
@@ -124,6 +125,7 @@ SynapseOS is a research project and has no independent security audit. Read [Lim
 | AI scanning | garak 0.17.1 | `garak`, `synapse-garak` |
 | AI evaluation | Inspect AI 0.3.286 | `inspect` |
 | Local inference | llama.cpp | `llama-cli`, `llama-server` |
+| Detonation | Differential model detonation with a fake internet, honeytokens and signed receipts | `synapse-detonate` |
 | Isolation | systemd sandbox with no network, a dynamic user, and hard memory and CPU limits | `synapse-sandbox` |
 | Air gap | One-way systemd target that unbinds NICs and locks routing | `airgap.target` |
 | Telemetry | bpftrace service logging AI port connections and per-process byte counts | `synapse-ebpf-monitor.service` |
@@ -315,6 +317,42 @@ Set `--memory` above the size of the model file plus its context buffer. A model
 
 Do not run `llama-server` through `synapse-sandbox`. The sandbox forbids `AF_INET`, so the server cannot listen on a TCP port. See [the next section](#scanning-with-garak) for the options.
 
+## The detonation chamber
+
+A sandbox answers "was it contained?". The chamber answers "what was this file trying to do?".
+
+```sh
+synapse-detonate scan model.pkl --runtime pickle
+synapse-detonate scan model.pt --runtime torch
+synapse-detonate scan model.gguf --runtime jinja
+synapse-detonate scan model.gguf --runtime llama
+synapse-detonate verify /var/lib/synapse-chamber/runs/<id>/receipt.json
+```
+
+| Runtime | What it loads with |
+| --- | --- |
+| `pickle` | `pickle.load` |
+| `torch` | `torch.load(weights_only=False)` |
+| `jinja` | The GGUF chat template in an unsandboxed Jinja2 environment, as a vulnerable loader would |
+| `llama` | `llama-cli` |
+
+**How it decides.** A model file is data, so swapping it for an inert twin should not change what its runtime does in the kernel. The chamber builds a twin that differs only in active content: the pickle stream is replaced, or the GGUF chat template. It loads both under the same runtime, path and environment, reduces each trace to a set of behaviours, and reports what only the suspect did. There are no signatures or denylists, so the method does not depend on the file format or on knowing the payload.
+
+**What the file sees.** Blocking everything hides what a payload wanted, so the chamber does not block network calls. Each arm gets its own network namespace in which every IPv4 address answers: all TCP and UDP is redirected to a sink that replies to HTTP and DNS and records the bytes. The home directory holds honeytoken AWS, SSH, Kubernetes and API credentials, which are also set as environment variables and are new for each scan. If a token reaches the sink in plain, base64, hex, base32 or zlib form, the verdict is proven exfiltration, not suspicion.
+
+**How tracing starts.** The process is held at a FIFO before it runs anything. The tracer attaches to its cgroup, and only then is the process released, so no event precedes the tracer.
+
+| Verdict | Exit code | Meaning |
+| --- | --- | --- |
+| `no-divergence` | 0 | The file did nothing kernel-visible that its twin did not, on this path |
+| `divergent` | 10 | It did, and the findings list what |
+| `exfiltration` | 20 | A honeytoken was recovered from outbound traffic |
+| `inconclusive` | 30 | Events were lost, or the twin itself failed, with no divergence seen |
+
+**The receipt.** Each scan writes a signed `receipt.json` in `/var/lib/synapse-chamber/runs/<id>/`. It holds the model hash, twin hash, findings, hash-chained trace heads and the Nix store path of the running system. Because that path identifies the whole lab, a third party can build the same system and detonate the same file. The behaviour digest covers the findings and was stable across repeated runs in CI.
+
+**Limits.** `no-divergence` does not mean safe. Only the executed path is observed, so a payload gated on a date or a specific hostname can stay dormant. A malicious change to weights is behavioural and invisible here; use garak for that. The signing key is local, so a receipt proves integrity after signing, not that an honest machine produced it. Blocked calls from the remaining kernel policy are not traced, IPv6 has no route, TLS payloads are recorded but not decrypted, a traced path can occasionally be empty, and the `llama` runtime has no automated test. Containment is the namespaces, the unprivileged dynamic user and whatever VM you run in; the chamber removes the seccomp filter on purpose, so do not use it on a machine you care about.
+
 ## Scanning with garak
 
 There are two commands:
@@ -440,7 +478,7 @@ This takes effect immediately and does the following, in order:
 4. Flushes the IPv4 and IPv6 main routing tables and adds `prohibit` rules at priority 1
 5. Stops NetworkManager, wpa_supplicant, dhcpcd, systemd-networkd and sshd
 
-**It is one way. The only exit is a reboot.** On the live image, a reboot also discards everything, so copy results to removable storage first or use a persistent installation.
+**There is no undo command, and the intended exit is a reboot.** This is a convention, not a kernel guarantee: root can rebind a driver and replace the rules, and the live image has passwordless `sudo`. On the live image, a reboot also discards everything, so copy results to removable storage first or use a persistent installation.
 
 Check it:
 
@@ -468,7 +506,7 @@ synapse-garak --target_type ggml --target_name /etc/synapseos/models/model.gguf 
 sudo find /var/lib/synapse-garak -name '*.report.*'
 ```
 
-The air gap controls networking. Removable media and displays remain available, so it does not by itself stop a person moving data off the machine.
+The air gap controls IP networking. Bluetooth is not covered, a hot-plugged NIC gets a driver (the firewall and routing rules still apply), and `atBoot` is not ordered before network startup, so an interface may come up briefly. Removable media and displays remain available.
 
 ## Network triage
 
@@ -646,6 +684,7 @@ Generate `hardware-configuration.nix` with `nixos-generate-config`, and create t
 | `airgap` | A connected VM loses its NIC driver, routes and peer connectivity; loopback survives |
 | `sandbox` | Loopback only, non-root, read-only, `AF_INET` blocked, memory limit enforced, normal workloads run |
 | `ebpf` | The monitor attaches and logs a real connection to port 8000 |
+| `chamber` | Clean files show no divergence; payloads in pickle, torch and GGUF templates diverge; a gated stealer is proven to exfiltrate; digests repeat; tampered receipts fail |
 | `audit` | Lynis hardening index stays at 65 or above |
 | `ai-tools` | The packaged `garak` and `inspect` entry points run |
 
@@ -666,6 +705,8 @@ nix build .#garak                                             # one package
 |-- modules/
 |   |-- ai-security/
 |   |   |-- airgap.nix             # airgap.target and enforcement
+|   |   |-- detonate.py            # The detonation chamber
+|   |   |-- detonation-chamber.nix # synapse-detonate
 |   |   |-- garak-scanner.nix      # garak, Inspect AI, synapse-garak
 |   |   `-- sandbox-runtime.nix    # synapse-sandbox, llama.cpp, model pinning
 |   |-- desktop/
