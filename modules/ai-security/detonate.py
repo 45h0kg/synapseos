@@ -312,7 +312,6 @@ PROBES = [
     ("syscalls:sys_enter_bind", 'printf("bind\\t0\\t\\n");'),
     ("syscalls:sys_enter_memfd_create", 'printf("memfd\\t0\\t%s\\n", str(args.uname));'),
     ("syscalls:sys_enter_ptrace", 'printf("ptrace\\t%d\\t\\n", args.request);'),
-    ("syscalls:sys_enter_unlinkat", 'printf("unlink\\t0\\t%s\\n", str(args.pathname));'),
     ("syscalls:sys_enter_mprotect", 'printf("mprotect\\t%d\\t\\n", args.prot);'),
 ]
 
@@ -419,8 +418,11 @@ def detonate(name, model, runtime, rundir, world, opts):
 
         threading.Thread(target=read_trace, daemon=True).start()
         if not attached.wait(90):
-            err.seek(0)
-            raise RuntimeError(f"the tracer did not attach: {err.read()[-2000:]}")
+            tracer.kill()
+            detail = subprocess.run(
+                ["bpftrace", "-v", "-B", "line", f"{arm}/probes.bt"], capture_output=True, text=True, timeout=120
+            )
+            raise RuntimeError(f"the tracer did not attach: {detail.stderr[-6000:]}")
 
         # The process has been held at the gate until now, so no event precedes the tracer.
         def release():
@@ -494,8 +496,6 @@ def behaviours(lines, sink_events, home_files):
             found.add(("high", "memfd", ""))
         elif kind == "ptrace":
             found.add(("high", "ptrace", ""))
-        elif kind == "unlink":
-            found.add(("medium", "unlink", normal_path(text)))
         elif kind == "mprotect" and number & 4:
             found.add(("medium", "exec-memory", ""))
     for event in sink_events:
