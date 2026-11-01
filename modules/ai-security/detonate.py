@@ -313,6 +313,7 @@ PROBES = [
     ("syscalls:sys_enter_memfd_create", 'printf("memfd\\t0\\t%s\\n", str(args.uname));'),
     ("syscalls:sys_enter_ptrace", 'printf("ptrace\\t%d\\t\\n", args.request);'),
     ("syscalls:sys_enter_unlinkat", 'printf("unlink\\t0\\t%s\\n", str(args.pathname));'),
+    ("syscalls:sys_enter_mmap", 'if ((args.prot & 4) && (args.flags & 32)) { printf("anon-exec\\t0\\t\\n"); }'),
     ("syscalls:sys_enter_mprotect", 'printf("mprotect\\t%d\\t\\n", args.prot);'),
 ]
 
@@ -363,7 +364,7 @@ def detonate(name, model, runtime, rundir, world, opts):
         wait_for(lambda: os.path.exists(ready), 15, "the fake internet")
 
         loader = (
-            ["/run/current-system/sw/bin/llama-cli", "-m", "/work/model", "-p", "Hello", "-n", "8"]
+            ["/run/current-system/sw/bin/llama-completion", "-no-cnv", "-m", "/work/model", "-p", "Hello", "-n", "8"]
             if runtime == "llama"
             else [sys.executable, os.path.abspath(__file__), "_load", runtime, "/work/model"]
         )
@@ -436,10 +437,18 @@ def detonate(name, model, runtime, rundir, world, opts):
             return True
 
         wait_for(release, 15, "the chamber gate")
-        status = target.wait(opts.timeout + 30)
+        try:
+            status = target.wait(opts.timeout + 30)
+        except subprocess.TimeoutExpired:
+            # A fork bomb can outlast the unit's own timeout, so it is killed outright.
+            subprocess.run(["systemctl", "kill", "--signal=KILL", f"{unit}.service"], capture_output=True)
+            status = 137
         time.sleep(1)
         tracer.send_signal(signal.SIGINT)
-        tracer.wait(30)
+        try:
+            tracer.wait(30)
+        except subprocess.TimeoutExpired:
+            tracer.kill()
         err.seek(0)
         lost = sum(int(n) for n in re.findall(r"Lost (\d+) events", err.read()))
         return lines, read_sink(sink_log), status, lost
@@ -499,6 +508,8 @@ def behaviours(lines, sink_events, home_files):
             found.add(("high", "ptrace", ""))
         elif kind == "unlink":
             found.add(("medium", "unlink", normal_path(text)))
+        elif kind == "anon-exec":
+            found.add(("high", "exec-memory", "anonymous"))
         elif kind == "mprotect" and number & 4:
             found.add(("medium", "exec-memory", ""))
     for event in sink_events:

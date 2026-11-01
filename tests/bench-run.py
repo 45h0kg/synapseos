@@ -61,7 +61,9 @@ def scan(path, runtime, timeout=60):
 
 def static(path):
     env = dict(os.environ, PYTHONPATH=WHEEL)
-    rc, out, _ = run([PYTHON, "-m", "picklescan", "-p", path], 60, env, shell=False)
+    # picklescan's __main__ drops main()'s return value, so the exit code must come from main itself.
+    code = "import sys; from picklescan.cli import main; sys.exit(main())"
+    rc, out, _ = run([PYTHON, "-c", code, "-p", path], 60, env, shell=False)
     return {0: "clean", 1: "flagged"}.get(rc, f"error-{rc}")
 
 
@@ -79,12 +81,12 @@ def corpus():
         f.write("[default]\naws_access_key_id = AKIACONTROLCONTROLCO\n")
     os.system("chmod -R a+rX /var/tmp/ctl")
     for entry in entries:
-        timeout = 150 if entry["runtime"] == "torch" or entry["group"] == "real" else 60
-        fired = control(entry) if entry["group"] in ("shell", "python", "behaviour", "evasion", "torch") else None
+        timeout = 90 if entry["runtime"] == "torch" or entry["group"] == "real" else 30
+        fired = control(entry) if entry["group"] in ("shell", "python", "behaviour", "evasion", "torch", "bypass") else None
         result = scan(entry["path"], entry["runtime"], timeout)
         result.update(file=entry["file"], label=entry["label"], group=entry["group"], technique=entry["technique"],
                       runtime=entry["runtime"], fired=fired,
-                      static=static(entry["path"]) if entry["path"].endswith((".pkl", ".pt")) else "n/a")
+                      static=static(entry["path"]) if entry["runtime"] in ("pickle", "torch") else "n/a")
         emit("sample", **result)
 
 
@@ -134,16 +136,17 @@ def repeatability():
 
 def pipelines():
     model = "/etc/synapseos/models/stories260K.gguf"
-    step("llama-sandbox", f'synapse-sandbox --memory 1G -- {SW}/llama-cli -m {model} -p "Once upon a time" -n 64 2>&1')
-    step("llama-direct-offline", f'{SW}/llama-cli -m {model} -p "Once upon a time" -n 256 2>&1 | tail -12')
+    step("llama-binaries", f"ls {SW} | grep llama")
+    step("llama-sandbox", f'synapse-sandbox --memory 1G -- {SW}/llama-completion -no-cnv -m {model} -p "Once upon a time" -n 64 2>&1', 240, 1400)
+    step("llama-direct-speed", f'{SW}/llama-completion -no-cnv -m {model} -p "Once upon a time" -n 256 2>&1 | tail -14', 240, 1400)
     step("torch-load-direct", f'{PYTHON} -c "import torch,time; t=time.time(); torch.load(\'{MODELS}/stories15M.pt\', weights_only=False); print(time.time()-t)"')
     step("garak-blank", "synapse-garak --target_type test.Blank --probes test.Test 2>&1")
-    opts = json.dumps({"ggml": {"GgmlGenerator": {"path_to_ggml_main": f"{SW}/llama-cli"}}})
+    opts = json.dumps({"ggml": {"GgmlGenerator": {"path_to_ggml_main": f"{SW}/llama-completion"}}})
     garak = f"synapse-garak --target_type ggml --target_name {model} --generator_options '{opts}' --generations 1 --probes test.Test 2>&1"
-    step("garak-ggml-default-flags", garak, 900)
-    bare = json.dumps({"ggml": {"GgmlGenerator": {"path_to_ggml_main": f"{SW}/llama-cli", "extra_ggml_flags": []}}})
-    step("garak-ggml-no-flags", garak.replace(opts, bare), 900)
-    step("garak-ggml-promptinject", garak.replace(opts, bare).replace("test.Test", "promptinject.HijackHateHumans"), 1500)
+    step("garak-ggml-default-flags", garak, 600, 1400)
+    bare = json.dumps({"ggml": {"GgmlGenerator": {"path_to_ggml_main": f"{SW}/llama-completion", "extra_ggml_flags": []}}})
+    step("garak-ggml-no-flags", garak.replace(opts, bare), 600, 1400)
+    step("garak-ggml-promptinject", garak.replace("test.Test", "promptinject.HijackHateHumans"), 1200, 2500)
     os.makedirs("/tmp/ins", exist_ok=True)
     with open("/tmp/ins/canary.py", "w") as f:
         f.write("from inspect_ai import Task, task\nfrom inspect_ai.dataset import Sample\n"

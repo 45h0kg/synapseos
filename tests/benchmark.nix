@@ -28,6 +28,7 @@ let
 in
 {
   name = "synapse-benchmark";
+  globalTimeout = 10800;
   nodes.machine = {
     imports = modules;
     synapseos.aiTools.enable = true;
