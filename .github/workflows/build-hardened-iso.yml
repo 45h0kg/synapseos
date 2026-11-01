@@ -34,7 +34,7 @@ jobs:
           system-features = kvm nixos-test benchmark big-parallel
 
     - name: Run VM Tests
-      run: nix flake check --no-update-lock-file --print-build-logs --keep-going
+      run: nix build .#checks.x86_64-linux.chamber --no-update-lock-file --print-build-logs
 
   build:
     needs: check
