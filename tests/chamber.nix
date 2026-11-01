@@ -43,7 +43,7 @@
     }
     for label, program in CASES.items():
         machine.succeed(f"cat > /tmp/d.bt <<'EOF'\n{program}\nEOF")
-        rc, text = machine.execute("timeout -s INT 6 bpftrace -v -B line /tmp/d.bt 2>&1 | tail -4; echo rc=${PIPESTATUS[0]}")
+        rc, text = machine.execute("timeout -s INT 6 bpftrace -v -B line /tmp/d.bt 2>&1 | tail -4")
         print("DIAG", label, text.replace(chr(10), " | ")[-260:])
     machine.succeed("cat /sys/kernel/tracing/events/syscalls/sys_enter_socket/format | tail -12 | sed 's/^/DIAGFMT /' >&2")
     print("DIAG sysctl", machine.succeed("sysctl kernel.unprivileged_bpf_disabled kernel.perf_event_paranoid net.core.bpf_jit_harden; cat /sys/kernel/security/lsm; uname -r"))
