@@ -4,6 +4,7 @@ import os
 import random
 import re
 import shutil
+import signal
 import struct
 import subprocess
 import sys
@@ -22,14 +23,22 @@ def emit(kind, **fields):
 
 
 def run(cmd, timeout=600, env=None, shell=True):
+    # subprocess.run only kills the shell on timeout, and a surviving child keeps the
+    # output pipe open forever, so each command gets its own process group to kill.
     start = time.time()
+    proc = subprocess.Popen(cmd, shell=shell, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True, errors="replace", env=env,
+                            start_new_session=True)
     try:
-        done = subprocess.run(cmd, shell=shell, capture_output=True, text=True, errors="replace",
-                              timeout=timeout, env=env)
-        return done.returncode, done.stdout + done.stderr, time.time() - start
-    except subprocess.TimeoutExpired as error:
-        out = (error.stdout or b"").decode("utf-8", "replace") if isinstance(error.stdout, bytes) else (error.stdout or "")
-        return 124, out, time.time() - start
+        out, err = proc.communicate(timeout=timeout)
+        return proc.returncode, out + err, time.time() - start
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+        try:
+            out, err = proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:  # a daemonised child left its own group with the pipe
+            out, err = "", ""
+        return 124, out + err, time.time() - start
 
 
 def step(name, cmd, timeout=600, tail=900):
