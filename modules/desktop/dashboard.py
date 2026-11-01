@@ -43,7 +43,7 @@ def lines():
     rows += [f"  {name:<14}{state}" for name, state in interfaces()]
     rows.append("")
     rows.append("tools")
-    for tool in ("garak", "inspect", "synapse-sandbox", "synapse-triage", "tshark", "nmap"):
+    for tool in ("garak", "inspect", "synapse-sandbox", "synapse-detonate", "synapse-triage", "tshark", "nmap"):
         rows.append(f"  {tool:<18}{'ok' if shutil.which(tool) else 'missing'}")
     rows += ["", "enter air gap: sudo systemctl start airgap.target (reboot to leave)"]
     return rows
