@@ -26,7 +26,7 @@ import zlib
 STATE = "/var/lib/synapse-chamber"
 SINK_PORT = 15353
 INERT_TEMPLATE = "{% for m in messages %}{{ m.content }}{% endfor %}"
-EXIT = {"no-divergence": 0, "divergent": 10, "exfiltration": 20, "inconclusive": 30}
+EXIT = {"no-divergence": 0, "divergent": 10, "exfiltration": 20, "inconclusive": 30, "malformed": 40}
 SEVERITY = {"info": 0, "medium": 1, "high": 2, "critical": 3}
 SENSITIVE = re.compile(r"^(/proc/(self|N)/(environ|mem|maps)|/etc/(passwd|shadow|ssh/)|/root/|/run/secrets)")
 
@@ -636,7 +636,11 @@ def scan(opts):
 
     suspect, twin = f"{rundir}/suspect.bin", f"{rundir}/twin.bin"
     shutil.copyfile(source, suspect)
-    make_twin(suspect, twin, opts.runtime)
+    try:
+        make_twin(suspect, twin, opts.runtime)
+    except (ValueError, IndexError, RecursionError, struct.error, zipfile.BadZipFile) as error:
+        print(f"verdict: malformed\ndigest:  none\nreason:  {error}")
+        return EXIT["malformed"]
     os.chmod(suspect, 0o644)
     os.chmod(twin, 0o644)
 
