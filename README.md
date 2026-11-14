@@ -334,7 +334,7 @@ synapse-detonate verify /var/lib/synapse-chamber/runs/<id>/receipt.json
 | `pickle` | `pickle.load` |
 | `torch` | `torch.load(weights_only=False)` |
 | `jinja` | The GGUF chat template in an unsandboxed Jinja2 environment, as a vulnerable loader would |
-| `llama` | `llama-cli` |
+| `llama` | `llama-completion` |
 
 **How it decides.** A model file is data, so swapping it for an inert twin should not change what its runtime does in the kernel. The chamber builds a twin that differs only in active content: the pickle stream is replaced, or the GGUF chat template. It loads both under the same runtime, path and environment, reduces each trace to a set of behaviours, and reports what only the suspect did. There are no signatures or denylists, so the method does not depend on the file format or on knowing the payload.
 
@@ -348,10 +348,11 @@ synapse-detonate verify /var/lib/synapse-chamber/runs/<id>/receipt.json
 | `divergent` | 10 | It did, and the findings list what |
 | `exfiltration` | 20 | A honeytoken was recovered from outbound traffic |
 | `inconclusive` | 30 | Events were lost, the suspect hit the time limit, or the twin itself failed, with no divergence seen |
+| `malformed` | 40 | The chamber could not build a twin, so the file was not detonated. This is not a safe result: the runtime may still load the file, for example `torch.load` accepts a plain pickle that is not a zip |
 
 **The receipt.** Each scan writes a signed `receipt.json` in `/var/lib/synapse-chamber/runs/<id>/`. It holds the model hash, twin hash, findings, hash-chained trace heads and the Nix store path of the running system. Because that path identifies the whole lab, a third party can build the same system and detonate the same file. The behaviour digest covers the findings and was stable across repeated runs in CI.
 
-**Limits.** `no-divergence` does not mean safe. Only the executed path is observed, so a payload gated on a date or a specific hostname can stay dormant. A malicious change to weights is behavioural and invisible here; use garak for that. The signing key is local, so a receipt proves integrity after signing, not that an honest machine produced it. Blocked calls from the remaining kernel policy are not traced, IPv6 has no route, TLS payloads are recorded but not decrypted, a traced path can occasionally be empty, and the `llama` runtime has no automated test. Containment is the namespaces, the unprivileged dynamic user and whatever VM you run in; the chamber removes the seccomp filter on purpose, so do not use it on a machine you care about.
+**Limits.** `no-divergence` does not mean safe. Only the executed path is observed, so a payload gated on a date or a specific hostname can stay dormant, and so can one that looks for the chamber itself. In CI, eight sample payloads that check the date, hostname, environment, GPU, gate file, cgroup, working path or user ID stayed quiet in the chamber and ran outside it. A malicious change to weights is behavioural and invisible here; use garak for that. The signing key is local, so a receipt proves integrity after signing, not that an honest machine produced it. Blocked calls from the remaining kernel policy are not traced, IPv6 has no route, TLS payloads are recorded but not decrypted, a traced path can occasionally be empty, and the `llama` runtime has no automated test. Containment is the namespaces, the unprivileged dynamic user and whatever VM you run in; the chamber removes the seccomp filter on purpose, so do not use it on a machine you care about.
 
 ## Scanning with garak
 
