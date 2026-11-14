@@ -38,6 +38,8 @@
       };
 
       packages.${system} = {
+        benchmark = vmTest ./tests/benchmark.nix;
+        iso-boot = import ./tests/iso-boot.nix { inherit nixpkgs pkgs modules; };
         inherit (tools) garak inspect_ai;
         iso = self.nixosConfigurations.synapseOS.config.system.build.isoImage;
         default = self.packages.${system}.iso;

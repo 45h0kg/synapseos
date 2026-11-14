@@ -1,0 +1,38 @@
+name: "SynapseOS Benchmark"
+on:
+  push:
+    branches: [ benchmark ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [ benchmark, iso-boot ]
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v7.0.1
+
+    - name: Enable KVM
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    - name: Free Disk Space
+      run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache
+
+    - name: Install Nix
+      uses: cachix/install-nix-action@v31.11.3
+      with:
+        extra_nix_config: |
+          system-features = kvm nixos-test benchmark big-parallel
+
+    - name: Run
+      run: nix build .#${{ matrix.target }} --no-update-lock-file --print-build-logs
